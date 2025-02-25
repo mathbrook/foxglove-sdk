@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 class MCAPWriter:
     """
@@ -77,6 +77,7 @@ class Capability(Enum):
 
     ClientPublish = ...
     Parameters = ...
+    Services = ...
     Time = ...
 
 class Client:
@@ -152,6 +153,80 @@ AnyParameterValue = Union[
     ParameterValue.Dict,
 ]
 
+class Request:
+    """
+    A websocket service request.
+    """
+
+    service_name: str
+    call_id: int
+    encoding: str
+    payload: bytes
+
+ServiceHandler = Callable[["Client", "Request"], bytes]
+
+class Service:
+    """
+    A websocket service.
+    """
+
+    name: str
+    schema: "ServiceSchema"
+    handler: "ServiceHandler"
+
+    def __new__(
+        cls, *, name: str, schema: "ServiceSchema", handler: "ServiceHandler"
+    ) -> "Service": ...
+
+class ServiceSchema:
+    """
+    A websocket service schema.
+    """
+
+    name: str
+    request: Optional["MessageSchema"]
+    response: Optional["MessageSchema"]
+
+    def __new__(
+        cls,
+        *,
+        name: str,
+        request: Optional["MessageSchema"] = None,
+        response: Optional["MessageSchema"] = None,
+    ) -> "ServiceSchema": ...
+
+class MessageSchema:
+    """
+    A service request or response schema.
+    """
+
+    encoding: str
+    schema: "Schema"
+
+    def __new__(
+        cls,
+        *,
+        encoding: str,
+        schema: "Schema",
+    ) -> "MessageSchema": ...
+
+class Schema:
+    """
+    A schema for a message or service call.
+    """
+
+    name: str
+    encoding: str
+    data: bytes
+
+    def __new__(
+        cls,
+        *,
+        name: str,
+        encoding: str,
+        data: bytes,
+    ) -> "Schema": ...
+
 def start_server(
     name: Optional[str] = None,
     host: Optional[str] = "127.0.0.1",
@@ -159,6 +234,7 @@ def start_server(
     capabilities: Optional[List[Capability]] = None,
     server_listener: Any = None,
     supported_encodings: Optional[List[str]] = None,
+    services: Optional[List["Service"]] = None,
 ) -> WebSocketServer:
     """
     Start a websocket server for live visualization.

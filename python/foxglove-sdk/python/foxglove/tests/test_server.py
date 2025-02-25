@@ -2,7 +2,10 @@ import time
 import unittest
 
 from foxglove import (
+    Capability,
     ServerListener,
+    Service,
+    ServiceSchema,
     StatusLevel,
     start_server,
 )
@@ -29,3 +32,17 @@ class TestServer(unittest.TestCase):
 
         listener.on_parameters_subscribe(["test"])
         listener.on_parameters_unsubscribe(["test"])
+
+    def test_services_interface(self) -> None:
+        server = start_server(
+            capabilities=[Capability.Services],
+            supported_encodings=["json"],
+            services=[
+                Service(
+                    name="test",
+                    schema=ServiceSchema(name="test-schema"),
+                    handler=lambda *_: b"{}",
+                ),
+            ],
+        )
+        server.stop()

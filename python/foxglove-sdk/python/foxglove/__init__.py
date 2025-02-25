@@ -7,16 +7,21 @@ schemas.
 
 import atexit
 import logging
-from typing import List, Optional, Protocol, Union
+from typing import Callable, List, Optional, Protocol, Union
 
 from ._foxglove_py import (
     Capability,
     ChannelView,
     Client,
     MCAPWriter,
+    MessageSchema,
     Parameter,
     ParameterType,
     ParameterValue,
+    Request,
+    Schema,
+    Service,
+    ServiceSchema,
     StatusLevel,
     WebSocketServer,
     disable_logging,
@@ -139,6 +144,9 @@ class ServerListener(Protocol):
         return None
 
 
+ServiceHandler = Callable[["Client", "Request"], bytes]
+
+
 def start_server(
     name: Optional[str] = None,
     host: Optional[str] = "127.0.0.1",
@@ -146,6 +154,7 @@ def start_server(
     capabilities: Optional[List[Capability]] = None,
     server_listener: Optional[ServerListener] = None,
     supported_encodings: Optional[List[str]] = None,
+    services: Optional[List[Service]] = None,
 ) -> WebSocketServer:
     """
     Start a websocket server for live visualization.
@@ -156,6 +165,7 @@ def start_server(
     :param capabilities: A list of capabilities to advertise to clients.
     :param server_listener: A Python object that implements the :py:class:`ServerListener` protocol.
     :param supported_encodings: A list of encodings to advertise to clients.
+    :param services: A list of services to advertise to clients.
     """
     return _start_server(
         name=name,
@@ -164,6 +174,7 @@ def start_server(
         capabilities=capabilities,
         server_listener=server_listener,
         supported_encodings=supported_encodings,
+        services=services,
     )
 
 
@@ -203,12 +214,19 @@ def verbose_off() -> None:
 __all__ = [
     "Capability",
     "Channel",
+    "Client",
     "MCAPWriter",
+    "MessageSchema",
     "Parameter",
     "ParameterType",
     "ParameterValue",
+    "Request",
+    "Schema",
     "SchemaDefinition",
     "ServerListener",
+    "Service",
+    "ServiceHandler",
+    "ServiceSchema",
     "StatusLevel",
     "WebSocketServer",
     "log",

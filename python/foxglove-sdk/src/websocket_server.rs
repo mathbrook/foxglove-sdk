@@ -1,4 +1,5 @@
 use crate::errors::PyFoxgloveError;
+use bytes::Bytes;
 use foxglove::{
     websocket::{ChannelView, Client, ClientChannelView, ServerListener, Status, StatusLevel},
     WebSocketServer, WebSocketServerBlockingHandle,
@@ -7,15 +8,9 @@ use pyo3::{
     prelude::*,
     types::{PyBytes, PyString},
 };
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time;
-use std::{collections::HashMap, sync::Arc};
-
-/// A client connected to a running websocket server.
-#[pyclass(name = "Client", module = "foxglove")]
-pub struct PyClient {
-    #[pyo3(get)]
-    id: u32,
-}
 
 /// Information about a channel.
 #[pyclass(name = "ChannelView", module = "foxglove")]
@@ -24,6 +19,29 @@ pub struct PyChannelView {
     id: u64,
     #[pyo3(get)]
     topic: Py<PyString>,
+}
+
+/// A client connected to a running websocket server.
+#[pyclass(name = "Client", module = "foxglove")]
+pub struct PyClient {
+    /// A client identifier that is unique within the scope of this server.
+    #[pyo3(get)]
+    id: u32,
+}
+
+#[pymethods]
+impl PyClient {
+    fn __repr__(&self) -> String {
+        format!("Client(id={})", self.id)
+    }
+}
+
+impl From<Client<'_>> for PyClient {
+    fn from(value: Client) -> Self {
+        Self {
+            id: value.id().into(),
+        }
+    }
 }
 
 /// A mechanism to register callbacks for handling client message events.
@@ -227,6 +245,35 @@ impl PyServerListener {
     }
 }
 
+/// A handler for websocket services which calls out to user-defined functions
+struct ServiceHandler {
+    handler: Arc<Py<PyAny>>,
+}
+impl foxglove::websocket::service::Handler for ServiceHandler {
+    fn call(
+        &self,
+        client: Client,
+        request: foxglove::websocket::service::Request,
+        responder: foxglove::websocket::service::Responder,
+    ) {
+        let handler = self.handler.clone();
+        let client = PyClient::from(client);
+        let request = PyRequest(request);
+        // Punt the callback to a blocking thread.
+        tokio::task::spawn_blocking(move || {
+            let result = Python::with_gil(|py| {
+                handler
+                    .bind(py)
+                    .call((client, request), None)
+                    .and_then(|data| data.extract::<Vec<u8>>())
+            })
+            .map(Bytes::from)
+            .map_err(|e| e.to_string());
+            responder.respond(result);
+        });
+    }
+}
+
 /// Start a new Foxglove WebSocket server.
 ///
 /// :param name: The name of the server.
@@ -240,7 +287,8 @@ impl PyServerListener {
 /// To connect to this server: open Foxglove, choose "Open a new connection", and select Foxglove
 /// WebSocket. The default connection string matches the defaults used by the SDK.
 #[pyfunction]
-#[pyo3(signature = (*, name = None, host="127.0.0.1", port=8765, capabilities=None, server_listener=None, supported_encodings=None))]
+#[pyo3(signature = (*, name = None, host="127.0.0.1", port=8765, capabilities=None, server_listener=None, supported_encodings=None, services=None))]
+#[allow(clippy::too_many_arguments)]
 pub fn start_server(
     py: Python<'_>,
     name: Option<String>,
@@ -249,6 +297,7 @@ pub fn start_server(
     capabilities: Option<Vec<PyCapability>>,
     server_listener: Option<Py<PyAny>>,
     supported_encodings: Option<Vec<String>>,
+    services: Option<Vec<PyService>>,
 ) -> PyResult<PyWebSocketServer> {
     let session_id = time::SystemTime::now()
         .duration_since(time::UNIX_EPOCH)
@@ -275,6 +324,10 @@ pub fn start_server(
 
     if let Some(supported_encodings) = supported_encodings {
         server = server.supported_encodings(supported_encodings);
+    }
+
+    if let Some(services) = services {
+        server = server.services(services.into_iter().map(PyService::into));
     }
 
     let handle = py
@@ -377,6 +430,8 @@ pub enum PyCapability {
     /// server publishes time data, then timestamps of published messages must originate from the
     /// same time source.
     Time,
+    /// Allow clients to call services.
+    Services,
 }
 
 impl From<PyCapability> for foxglove::websocket::Capability {
@@ -385,7 +440,177 @@ impl From<PyCapability> for foxglove::websocket::Capability {
             PyCapability::ClientPublish => foxglove::websocket::Capability::ClientPublish,
             PyCapability::Parameters => foxglove::websocket::Capability::Parameters,
             PyCapability::Time => foxglove::websocket::Capability::Time,
+            PyCapability::Services => foxglove::websocket::Capability::Services,
         }
+    }
+}
+
+/// A websocket service.
+///
+/// The handler must be a callback function which takes the :py:class:`Client` and
+/// :py:class:`Request` as arguments, and returns `bytes` as a response. If the handler raises an
+/// exception, the stringified exception message will be returned to the client as an error.
+#[pyclass(name = "Service", module = "foxglove", get_all, set_all)]
+#[derive(FromPyObject)]
+pub struct PyService {
+    name: String,
+    schema: PyServiceSchema,
+    handler: Py<PyAny>,
+}
+
+#[pymethods]
+impl PyService {
+    /// Create a new service.
+    #[new]
+    #[pyo3(signature = (name, *, schema, handler))]
+    fn new(name: &str, schema: PyServiceSchema, handler: Py<PyAny>) -> Self {
+        PyService {
+            name: name.to_string(),
+            schema,
+            handler,
+        }
+    }
+}
+
+impl From<PyService> for foxglove::websocket::service::Service {
+    fn from(value: PyService) -> Self {
+        foxglove::websocket::service::Service::builder(value.name, value.schema.into()).handler(
+            ServiceHandler {
+                handler: Arc::new(value.handler),
+            },
+        )
+    }
+}
+
+/// A websocket service request.
+#[pyclass(name = "Request", module = "foxglove")]
+pub struct PyRequest(foxglove::websocket::service::Request);
+
+#[pymethods]
+impl PyRequest {
+    /// The service name.
+    #[getter]
+    fn service_name(&self) -> &str {
+        self.0.service_name()
+    }
+
+    /// The call ID that uniquely identifies this request for this client.
+    #[getter]
+    fn call_id(&self) -> u32 {
+        self.0.call_id().into()
+    }
+
+    /// The request encoding.
+    #[getter]
+    fn encoding(&self) -> &str {
+        self.0.encoding()
+    }
+
+    /// The request payload.
+    #[getter]
+    fn payload(&self) -> &[u8] {
+        self.0.payload()
+    }
+}
+
+/// A service schema.
+#[pyclass(name = "ServiceSchema", module = "foxglove", get_all, set_all)]
+#[derive(Clone)]
+pub struct PyServiceSchema {
+    name: String,
+    request: Option<PyMessageSchema>,
+    response: Option<PyMessageSchema>,
+}
+
+#[pymethods]
+impl PyServiceSchema {
+    /// Create a new service schema.
+    ///
+    /// :param name: The name of the service.
+    /// :param request: The request schema.
+    /// :param response: The response schema.
+    #[new]
+    #[pyo3(signature = (name, *, request=None, response=None))]
+    fn new(
+        name: &str,
+        request: Option<&PyMessageSchema>,
+        response: Option<&PyMessageSchema>,
+    ) -> Self {
+        PyServiceSchema {
+            name: name.to_string(),
+            request: request.cloned(),
+            response: response.cloned(),
+        }
+    }
+}
+
+impl From<PyServiceSchema> for foxglove::websocket::service::ServiceSchema {
+    fn from(value: PyServiceSchema) -> Self {
+        let mut schema = foxglove::websocket::service::ServiceSchema::new(value.name);
+        if let Some(request) = value.request {
+            schema = schema.with_request(request.encoding, request.schema.into());
+        }
+        if let Some(response) = value.response {
+            schema = schema.with_response(response.encoding, response.schema.into());
+        }
+        schema
+    }
+}
+
+/// A service request or response schema.
+#[pyclass(name = "MessageSchema", module = "foxglove", get_all, set_all)]
+#[derive(Clone)]
+pub struct PyMessageSchema {
+    encoding: String,
+    schema: PySchema,
+}
+
+#[pymethods]
+impl PyMessageSchema {
+    /// Create a new message schema.
+    ///
+    /// :param encoding: The encoding of the message.
+    /// :param schema: The schema.
+    #[new]
+    #[pyo3(signature = (*, encoding, schema))]
+    fn new(encoding: &str, schema: PySchema) -> Self {
+        PyMessageSchema {
+            encoding: encoding.to_string(),
+            schema,
+        }
+    }
+}
+
+/// A Schema is a description of the data format of messages or service calls.
+#[pyclass(name = "Schema", module = "foxglove", get_all, set_all)]
+#[derive(Clone)]
+pub struct PySchema {
+    name: String,
+    encoding: String,
+    data: Vec<u8>,
+}
+
+#[pymethods]
+impl PySchema {
+    /// Create a new schema.
+    ///
+    /// :param name: The name of the schema.
+    /// :param encoding: The encoding of the schema.
+    /// :param data: Schema data, as `bytes`
+    #[new]
+    #[pyo3(signature = (*, name, encoding, data))]
+    fn new(name: &str, encoding: &str, data: Vec<u8>) -> Self {
+        PySchema {
+            name: name.to_string(),
+            encoding: encoding.to_string(),
+            data,
+        }
+    }
+}
+
+impl From<PySchema> for foxglove::Schema {
+    fn from(value: PySchema) -> Self {
+        foxglove::Schema::new(value.name, value.encoding, value.data)
     }
 }
 
