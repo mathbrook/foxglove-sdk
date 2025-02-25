@@ -1,7 +1,11 @@
 import time
 import unittest
 
-from foxglove import StatusLevel, start_server
+from foxglove import (
+    ServerListener,
+    StatusLevel,
+    start_server,
+)
 
 
 class TestServer(unittest.TestCase):
@@ -15,3 +19,13 @@ class TestServer(unittest.TestCase):
         server.remove_status(["some-id"])
         server.clear_session()
         server.stop()
+
+    def test_server_listener_provides_default_implementation(self) -> None:
+
+        class DefaultServerListener(ServerListener):
+            pass
+
+        listener = DefaultServerListener()
+
+        listener.on_parameters_subscribe(["test"])
+        listener.on_parameters_unsubscribe(["test"])
