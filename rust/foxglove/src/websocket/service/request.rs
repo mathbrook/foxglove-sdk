@@ -6,7 +6,7 @@ use bytes::Bytes;
 
 use crate::websocket::ClientId;
 
-use super::{CallId, Service, ServiceId};
+use super::{CallId, Service};
 
 /// A service call request.
 #[derive(Debug, Clone)]
@@ -34,11 +34,6 @@ impl Request {
             encoding,
             payload,
         }
-    }
-
-    /// The service ID.
-    pub fn service_id(&self) -> ServiceId {
-        self.service.id()
     }
 
     /// The service name.
