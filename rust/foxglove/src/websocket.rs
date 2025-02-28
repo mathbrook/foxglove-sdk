@@ -66,7 +66,8 @@ pub enum Capability {
     Time,
     /// Allow clients to call services.
     Services,
-    /// Allow clients to request assets.
+    /// Allow clients to request assets. If you supply an asset handler to the server, this
+    /// capability will be advertised automatically.
     Assets,
     /// Allow clients to subscribe and make connection graph updates
     ConnectionGraph,
@@ -887,6 +888,7 @@ impl ConnectedClient {
             let asset_responder = AssetResponder::new(Client::new(self), request_id, guard);
             handler.fetch(uri, asset_responder);
         } else {
+            tracing::error!("Server advertised the Assets capability without providing a handler");
             self.send_asset_error("Server does not have a fetch asset handler", request_id);
         }
     }
