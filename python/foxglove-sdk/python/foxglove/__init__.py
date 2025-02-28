@@ -30,7 +30,7 @@ from ._foxglove_py import (
     shutdown,
 )
 from ._foxglove_py import start_server as _start_server
-from .channel import Channel, SchemaDefinition, log
+from .channel import Channel, log
 
 atexit.register(shutdown)
 
@@ -282,7 +282,6 @@ __all__ = [
     "ParameterValue",
     "Request",
     "Schema",
-    "SchemaDefinition",
     "ServerListener",
     "Service",
     "ServiceHandler",
