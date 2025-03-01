@@ -53,6 +53,8 @@ impl WebSocketServer {
 
     /// Bind a TCP port.
     ///
+    /// `port` may be 0, in which case an available port will be automatically selected.
+    ///
     /// By default, the server will bind to `127.0.0.1:8765`.
     pub fn bind(mut self, host: impl Into<String>, port: u16) -> Self {
         self.host = host.into();
@@ -212,6 +214,11 @@ impl WebSocketServerHandle {
         self.0.runtime()
     }
 
+    /// Returns the local port that the server is listening on.
+    pub fn port(&self) -> u16 {
+        self.0.port()
+    }
+
     /// Advertises support for the provided services.
     ///
     /// These services will be available for clients to use until they are removed with
@@ -289,6 +296,11 @@ impl WebSocketServerHandle {
 pub struct WebSocketServerBlockingHandle(WebSocketServerHandle);
 
 impl WebSocketServerBlockingHandle {
+    /// Returns the local port that the server is listening on.
+    pub fn port(&self) -> u16 {
+        self.0.port()
+    }
+
     /// Advertises support for the provided services.
     ///
     /// These services will be available for clients to use until they are removed with

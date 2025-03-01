@@ -385,6 +385,12 @@ impl PyWebSocketServer {
         }
     }
 
+    // Get the port on which the server is listening.
+    #[getter]
+    pub fn port(&self) -> u16 {
+        self.0.as_ref().map_or(0, |handle| handle.port())
+    }
+
     /// Sets a new session ID and notifies all clients, causing them to reset their state.
     /// If no session ID is provided, generates a new one based on the current timestamp.
     /// If the server has been stopped, this has no effect.

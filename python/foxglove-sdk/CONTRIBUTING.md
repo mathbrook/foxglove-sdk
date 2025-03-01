@@ -48,6 +48,12 @@ PEP8 check:
 poetry run flake8 .
 ```
 
+Run unit tests:
+
+```sh
+cd python && poetry run python -m unittest
+```
+
 ### Examples
 
 Examples exist in the `foxglove-sdk-examples` directotry. See each example's readme for usage.

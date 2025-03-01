@@ -16,8 +16,8 @@ use futures_util::{stream::SplitSink, SinkExt, StreamExt};
 use serde::Serialize;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
-use std::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed};
-use std::sync::atomic::{AtomicBool, AtomicU32};
+use std::sync::atomic::Ordering::{AcqRel, Acquire, Release};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32};
 use std::sync::Weak;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
@@ -211,6 +211,8 @@ pub(crate) struct Server {
     /// It's analogous to the mixin shared_from_this in C++.
     weak_self: Weak<Self>,
     started: AtomicBool,
+    /// Local port the server is listening on, once it has been started
+    port: AtomicU16,
     message_backlog_size: u32,
     runtime: Handle,
     /// May be provided by the caller
@@ -340,7 +342,7 @@ impl ConnectedClient {
     }
 
     fn is_subscribed_to_connection_graph(&self) -> bool {
-        self.subscribed_to_connection_graph.load(Relaxed)
+        self.subscribed_to_connection_graph.load(Acquire)
     }
 
     /// Handle a text or binary message sent from the client.
@@ -899,7 +901,7 @@ impl ConnectedClient {
             return;
         }
 
-        let is_subscribed = self.subscribed_to_connection_graph.load(Relaxed);
+        let is_subscribed = self.subscribed_to_connection_graph.load(Acquire);
         if is_subscribed {
             tracing::debug!(
                 "Client {} is already subscribed to connection graph updates",
@@ -933,7 +935,7 @@ impl ConnectedClient {
         let json_diff = connection_graph.update(current_graph);
         // Send the full diff to the client as the starting state
         self.send_control_msg(Message::text(json_diff));
-        self.subscribed_to_connection_graph.store(true, Relaxed);
+        self.subscribed_to_connection_graph.store(true, Release);
     }
 
     fn on_connection_graph_unsubscribe(&self, server: Arc<Server>) {
@@ -961,7 +963,7 @@ impl ConnectedClient {
 
         // Acquire the lock to sychronize with subscribe and with server.connection_graph_update.
         let _guard = server.connection_graph.lock();
-        self.subscribed_to_connection_graph.store(false, Relaxed);
+        self.subscribed_to_connection_graph.store(false, Release);
     }
 
     /// Send an ad hoc error status message to the client, with the given message.
@@ -1058,6 +1060,7 @@ impl Server {
 
         Server {
             weak_self,
+            port: AtomicU16::new(0),
             started: AtomicBool::new(false),
             message_backlog_size: opts
                 .message_backlog_size
@@ -1087,13 +1090,17 @@ impl Server {
             .expect("server cannot be dropped while in use")
     }
 
+    pub(crate) fn port(&self) -> u16 {
+        self.port.load(Acquire)
+    }
+
     // Returns a handle to the async runtime that this server is using.
     pub fn runtime(&self) -> &Handle {
         &self.runtime
     }
 
-    // Spawn a task to accept all incoming connections and return
-    pub async fn start(&self, host: &str, port: u16) -> Result<String, FoxgloveError> {
+    // Spawn a task to accept all incoming connections and return the server's local address
+    pub async fn start(&self, host: &str, port: u16) -> Result<SocketAddr, FoxgloveError> {
         if self.started.load(Acquire) {
             return Err(FoxgloveError::ServerAlreadyStarted);
         }
@@ -1104,10 +1111,8 @@ impl Server {
         let listener = TcpListener::bind(&addr)
             .await
             .map_err(FoxgloveError::Bind)?;
-        let bound_addr = listener
-            .local_addr()
-            .map_err(|err| FoxgloveError::Unspecified(err.into()))?
-            .to_string();
+        let local_addr = listener.local_addr().map_err(FoxgloveError::Bind)?;
+        self.port.store(local_addr.port(), Release);
 
         let cancellation_token = self.cancellation_token.clone();
         let server = self.arc().clone();
@@ -1120,9 +1125,9 @@ impl Server {
             }
         });
 
-        tracing::info!("Started server on {}", bound_addr);
+        tracing::info!("Started server on {}", local_addr);
 
-        Ok(bound_addr)
+        Ok(local_addr)
     }
 
     pub async fn stop(&self) {
@@ -1134,6 +1139,7 @@ impl Server {
             return;
         }
         tracing::info!("Shutting down");
+        self.port.store(0, Release);
         let clients = self.clients.get();
         for client in clients.iter() {
             let mut sender = client.sender.lock().await;
@@ -1300,7 +1306,7 @@ impl Server {
         }
 
         static CLIENT_ID: AtomicU32 = AtomicU32::new(1);
-        let id = ClientId(CLIENT_ID.fetch_add(1, Relaxed));
+        let id = ClientId(CLIENT_ID.fetch_add(1, AcqRel));
 
         let (data_tx, data_rx) = flume::bounded(self.message_backlog_size as usize);
         let (ctrl_tx, ctrl_rx) = flume::bounded(self.message_backlog_size as usize);
