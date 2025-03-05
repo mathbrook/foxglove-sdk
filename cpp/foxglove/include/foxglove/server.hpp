@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -12,9 +14,9 @@ struct WebSocketServerOptions {
   uint16_t port;
 };
 
-class WebSocketServer {
+class WebSocketServer final {
 public:
-  WebSocketServer(WebSocketServerOptions options);
+  explicit WebSocketServer(WebSocketServerOptions options);
 
   // Get the port on which the server is listening.
   uint16_t port() const;

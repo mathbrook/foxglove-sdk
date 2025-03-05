@@ -5,10 +5,12 @@ BasedOnStyle: Google
 
 AllowShortFunctionsOnASingleLine: Empty
 AllowShortLambdasOnASingleLine: Empty
+AlignAfterOpenBracket: BlockIndent
 AccessModifierOffset: -2
 TabWidth: 2
 ContinuationIndentWidth: 2
 UseTab: Never
+BinPackArguments: false
 BreakConstructorInitializers: BeforeComma
 ColumnLimit: 100
 ConstructorInitializerAllOnOneLineOrOnePerLine: false
