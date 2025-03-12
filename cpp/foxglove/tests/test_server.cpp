@@ -6,9 +6,6 @@
 #include <websocketpp/client.hpp>
 #include <websocketpp/config/asio_no_tls_client.hpp>
 
-#include <chrono>
-
-using namespace std::chrono_literals;
 using Catch::Matchers::Equals;
 
 using WebSocketClient = websocketpp::client<websocketpp::config::asio_client>;
