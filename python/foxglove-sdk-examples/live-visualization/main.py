@@ -9,11 +9,7 @@ from math import cos, sin
 import foxglove
 import numpy as np
 from foxglove import Channel, Schema
-from foxglove.channels import (
-    FrameTransformsChannel,
-    PointCloudChannel,
-    SceneUpdateChannel,
-)
+from foxglove.channels import RawImageChannel
 from foxglove.schemas import (
     Color,
     CubePrimitive,
@@ -134,11 +130,6 @@ def main() -> None:
         supported_encodings=["json"],
     )
 
-    # Log messages having well-known Foxglove schemas using the appropriate channel type.
-    box_chan = SceneUpdateChannel("/boxes")
-    tf_chan = FrameTransformsChannel("/tf")
-    point_chan = PointCloudChannel("/pointcloud")
-
     # Log messages with a custom schema and any encoding.
     sin_chan = Channel(
         topic="/sine",
@@ -152,6 +143,8 @@ def main() -> None:
 
     # If you want to use JSON encoding, you can also specify the schema and log messages as dicts.
     json_chan = Channel(topic="/json", schema=plot_schema)
+
+    img_chan = RawImageChannel(topic="/image")
 
     try:
         counter = 0
@@ -171,7 +164,8 @@ def main() -> None:
 
             json_chan.log(json_msg)
 
-            tf_chan.log(
+            foxglove.log(
+                "/tf",
                 FrameTransforms(
                     transforms=[
                         FrameTransform(
@@ -187,10 +181,11 @@ def main() -> None:
                             translation=Vector3(x=-10, y=-10, z=0),
                         ),
                     ]
-                )
+                ),
             )
 
-            box_chan.log(
+            foxglove.log(
+                "/boxes",
                 SceneUpdate(
                     entities=[
                         SceneEntity(
@@ -212,14 +207,16 @@ def main() -> None:
                             ],
                         ),
                     ]
-                )
+                ),
             )
 
-            point_chan.log(make_point_cloud())
-
-            # Or use high-level log API without needing to manage explicit Channels.
             foxglove.log(
-                "/high-level",
+                "/pointcloud",
+                make_point_cloud(),
+            )
+
+            # Or use typed channels directly to get better type checking
+            img_chan.log(
                 RawImage(
                     data=np.zeros((100, 100, 3), dtype=np.uint8).tobytes(),
                     step=300,
