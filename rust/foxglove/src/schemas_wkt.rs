@@ -103,7 +103,7 @@ impl NormalizeResult {
 /// let duration: Duration = std::time::Duration::from_secs(u64::MAX).saturating_into();
 /// assert_eq!(duration, Duration::MAX);
 /// ```
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Duration {
     /// Seconds offset.
     sec: i32,
@@ -299,7 +299,7 @@ where
 ///     .saturating_into();
 /// assert_eq!(timestamp, Timestamp::MIN);
 /// ```
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Timestamp {
     /// Seconds since epoch.
     sec: u32,
@@ -337,6 +337,12 @@ impl Timestamp {
     /// `999_999_999`.
     pub fn new(sec: u32, nsec: u32) -> Self {
         Self::new_checked(sec, nsec).unwrap()
+    }
+
+    /// Returns the current timestamp using [`SystemTime::now`][std::time::SystemTime::now].
+    pub fn now() -> Self {
+        let now = std::time::SystemTime::now();
+        Self::try_from(now).expect("timestamp out of range")
     }
 
     /// Returns the number of seconds in the timestamp.
