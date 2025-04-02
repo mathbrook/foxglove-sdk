@@ -96,19 +96,27 @@ impl<T: Encode> Channel<T> {
 
         /// Returns true if there's at least one sink subscribed to this channel.
         pub fn has_sinks(&self) -> bool;
+
+        /// Closes the channel, removing it from the context.
+        ///
+        /// You can use this to explicitly unadvertise the channel to sinks that subscribe to
+        /// channels dynamically, such as the [`WebSocketServer`][crate::WebSocketServer].
+        ///
+        /// Attempts to log on a closed channel will elicit a throttled warning message.
+        pub fn close(&self);
     } }
 
     /// Encodes the message and logs it on the channel.
     pub fn log(&self, msg: &T) {
-        if self.has_sinks() {
-            self.log_to_sinks(msg, PartialMetadata::default());
-        }
+        self.log_with_meta(msg, PartialMetadata::default());
     }
 
     /// Encodes the message and logs it on the channel with additional metadata.
     pub fn log_with_meta(&self, msg: &T, metadata: PartialMetadata) {
         if self.has_sinks() {
             self.log_to_sinks(msg, metadata);
+        } else {
+            self.inner.log_warn_if_closed();
         }
     }
 
@@ -130,16 +138,16 @@ mod test {
     use crate::collection::collection;
     use crate::log_sink_set::ERROR_LOGGING_MESSAGE;
     use crate::testutil::RecordingSink;
-    use crate::{Context, RawChannel, Schema};
+    use crate::{Context, FoxgloveError, RawChannel, Schema};
     use std::collections::BTreeMap;
     use std::sync::Arc;
     use tracing_test::traced_test;
 
-    fn new_test_channel() -> Arc<RawChannel> {
-        RawChannel::new(
-            "topic".into(),
-            "message_encoding".into(),
-            Some(Schema::new(
+    fn new_test_channel(ctx: &Arc<Context>) -> Result<Arc<RawChannel>, FoxgloveError> {
+        ChannelBuilder::new("/topic")
+            .context(ctx)
+            .message_encoding("message_encoding")
+            .schema(Schema::new(
                 "name",
                 "encoding",
                 br#"{
@@ -149,9 +157,9 @@ mod test {
                         "count": {"type": "number"},
                     },
                 }"#,
-            )),
-            collection! {"key".to_string() => "value".to_string()},
-        )
+            ))
+            .metadata(collection! {"key".to_string() => "value".to_string()})
+            .build_raw()
     }
 
     #[test]
@@ -179,7 +187,8 @@ mod test {
 
     #[test]
     fn test_channel_next_sequence() {
-        let channel = new_test_channel();
+        let ctx = Context::new();
+        let channel = new_test_channel(&ctx).unwrap();
         assert_eq!(channel.next_sequence(), 1);
         assert_eq!(channel.next_sequence(), 2);
     }
@@ -187,7 +196,8 @@ mod test {
     #[traced_test]
     #[test]
     fn test_channel_log_msg() {
-        let channel = Arc::new(new_test_channel());
+        let ctx = Context::new();
+        let channel = new_test_channel(&ctx).unwrap();
         let msg = vec![1, 2, 3];
         channel.log(&msg);
         assert!(!logs_contain(ERROR_LOGGING_MESSAGE));
@@ -201,8 +211,7 @@ mod test {
 
         assert!(ctx.add_sink(recording_sink.clone()));
 
-        let channel = new_test_channel();
-        ctx.add_channel(channel.clone()).unwrap();
+        let channel = new_test_channel(&ctx).unwrap();
         let msg = b"test_message";
 
         channel.log(msg);
@@ -218,5 +227,33 @@ mod test {
             recorded[0].metadata.publish_time
         );
         assert!(recorded[0].metadata.log_time > 1732847588055322395);
+    }
+
+    #[traced_test]
+    #[test]
+    fn test_channel_close() {
+        let ctx = Context::new();
+        let ch = new_test_channel(&ctx).unwrap();
+        ch.log(b"");
+        assert!(!logs_contain("Cannot log on closed channel for /topic"));
+
+        // Explicitly close the channel.
+        ch.close();
+        ch.log(b"");
+        assert!(logs_contain("Cannot log on closed channel for /topic"));
+    }
+
+    #[traced_test]
+    #[test]
+    fn test_channel_closed_by_context() {
+        let ctx = Context::new();
+        let ch = new_test_channel(&ctx).unwrap();
+        ch.log(b"");
+        assert!(!logs_contain("Cannot log on closed channel for /topic"));
+
+        // Drop the context, which effectively closes the channel.
+        drop(ctx);
+        ch.log(b"");
+        assert!(logs_contain("Cannot log on closed channel for /topic"));
     }
 }
