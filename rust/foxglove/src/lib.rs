@@ -173,6 +173,7 @@ mod context;
 pub mod convert;
 mod cow_vec;
 mod encode;
+pub mod library_version;
 mod log_sink_set;
 mod mcap_writer;
 mod metadata;
@@ -181,6 +182,7 @@ mod schema;
 pub mod schemas;
 mod schemas_wkt;
 mod sink;
+
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
