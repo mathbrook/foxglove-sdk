@@ -35,6 +35,8 @@ pub mod service;
 mod tests;
 #[cfg(all(test, feature = "unstable"))]
 mod unstable_tests;
+#[allow(dead_code)]
+mod ws_protocol;
 
 pub use connection_graph::ConnectionGraph;
 use cow_vec::CowVec;
