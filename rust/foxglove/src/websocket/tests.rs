@@ -30,9 +30,7 @@ use crate::websocket::service::{CallId, Service, ServiceSchema};
 use crate::websocket::{
     BlockingAssetHandlerFn, Capability, ClientChannelId, ConnectionGraph, Parameter,
 };
-use crate::{
-    collection, ChannelBuilder, Context, FoxgloveError, PartialMetadata, RawChannel, Schema,
-};
+use crate::{ChannelBuilder, Context, FoxgloveError, PartialMetadata, RawChannel, Schema};
 
 fn make_message(id: usize) -> Message {
     Message::Text(format!("{id}").into())
@@ -109,7 +107,7 @@ fn new_channel(topic: &str, ctx: &Arc<Context>) -> Arc<RawChannel> {
             "schema_encoding",
             b"schema_data",
         ))
-        .metadata(collection! {"key".to_string() => "value".to_string()})
+        .metadata(maplit::btreemap! {"key".to_string() => "value".to_string()})
         .context(ctx)
         .build_raw()
         .expect("Failed to create channel")
