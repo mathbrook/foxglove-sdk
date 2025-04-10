@@ -264,9 +264,7 @@ impl<'a> FileStream<'a> {
             channel.log_with_meta(
                 data,
                 PartialMetadata {
-                    sequence: Some(header.sequence),
                     log_time: Some(header.log_time),
-                    publish_time: Some(header.publish_time),
                 },
             );
         }
