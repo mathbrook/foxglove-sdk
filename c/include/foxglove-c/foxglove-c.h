@@ -94,6 +94,20 @@ typedef struct foxglove_mcap_writer foxglove_mcap_writer;
 
 typedef struct foxglove_websocket_server foxglove_websocket_server;
 
+/**
+ * A string with associated length.
+ */
+typedef struct foxglove_string {
+  /**
+   * Pointer to valid UTF-8 data
+   */
+  const char *data;
+  /**
+   * Number of bytes in the string
+   */
+  size_t len;
+} foxglove_string;
+
 typedef struct foxglove_client_channel {
   uint32_t id;
   const char *topic;
@@ -125,22 +139,21 @@ typedef struct foxglove_server_callbacks {
 typedef uint8_t foxglove_server_capability;
 
 typedef struct foxglove_server_options {
-  const char *name;
-  const char *host;
+  struct foxglove_string name;
+  struct foxglove_string host;
   uint16_t port;
   const struct foxglove_server_callbacks *callbacks;
   foxglove_server_capability capabilities;
-  const char *const *supported_encodings;
+  const struct foxglove_string *supported_encodings;
   size_t supported_encodings_count;
 } foxglove_server_options;
 
 typedef struct foxglove_mcap_options {
-  const char *path;
+  struct foxglove_string path;
   size_t path_len;
   bool truncate;
   foxglove_mcap_compression compression;
-  const char *profile;
-  size_t profile_len;
+  struct foxglove_string profile;
   /**
    * chunk_size of 0 is treated as if it was omitted (None)
    */
@@ -158,8 +171,8 @@ typedef struct foxglove_mcap_options {
 } foxglove_mcap_options;
 
 typedef struct foxglove_schema {
-  const char *name;
-  const char *encoding;
+  struct foxglove_string name;
+  struct foxglove_string encoding;
   const uint8_t *data;
   size_t data_len;
 } foxglove_schema;
@@ -177,7 +190,10 @@ extern "C" {
  * Returns 0 on success, or returns a FoxgloveError code on error.
  *
  * # Safety
- * `name` and `host` must be null-terminated strings with valid UTF8.
+ * If `name` is supplied in options, it must contain valid UTF8.
+ * If `host` is supplied in options, it must contain valid UTF8.
+ * If `supported_encodings` is supplied in options, all `supported_encodings` must contain valid
+ * UTF8, and `supported_encodings` must have length equal to `supported_encodings_count`.
  */
 foxglove_error foxglove_server_start(const struct foxglove_server_options *FOXGLOVE_NONNULL options,
                                      struct foxglove_websocket_server **server);
@@ -199,7 +215,7 @@ foxglove_error foxglove_server_stop(struct foxglove_websocket_server *server);
  * Returns 0 on success, or returns a FoxgloveError code on error.
  *
  * # Safety
- * `path` and `profile` must be valid UTF8.
+ * `path` and `profile` must contain valid UTF8.
  */
 foxglove_error foxglove_mcap_open(const struct foxglove_mcap_options *FOXGLOVE_NONNULL options,
                                   struct foxglove_mcap_writer **writer);
@@ -220,12 +236,12 @@ foxglove_error foxglove_mcap_close(struct foxglove_mcap_writer *writer);
  * Returns 0 on success, or returns a FoxgloveError code on error.
  *
  * # Safety
- * `topic` and `message_encoding` must be null-terminated strings with valid UTF8. `schema` is an
- * optional pointer to a schema. The schema and the data it points to need only remain alive for
- * the duration of this function call (they will be copied).
+ * `topic` and `message_encoding` must contain valid UTF8. `schema` is an optional pointer to a
+ * schema. The schema and the data it points to need only remain alive for the duration of this
+ * function call (they will be copied).
  */
-foxglove_error foxglove_channel_create(const char *topic,
-                                       const char *message_encoding,
+foxglove_error foxglove_channel_create(struct foxglove_string topic,
+                                       struct foxglove_string message_encoding,
                                        const struct foxglove_schema *schema,
                                        const struct foxglove_channel **channel);
 

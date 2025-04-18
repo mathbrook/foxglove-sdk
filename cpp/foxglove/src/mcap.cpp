@@ -8,10 +8,8 @@ FoxgloveResult<McapWriter> McapWriter::create(const McapWriterOptions& options) 
   foxglove_internal_register_cpp_wrapper();
 
   foxglove_mcap_options cOptions = {};
-  cOptions.path = options.path.data();
-  cOptions.path_len = options.path.length();
-  cOptions.profile = options.profile.data();
-  cOptions.profile_len = options.profile.length();
+  cOptions.path = {options.path.data(), options.path.length()};
+  cOptions.profile = {options.profile.data(), options.profile.length()};
   // TODO FG-11215: generate the enum for C++ from the C enum
   // so this is guaranteed to never get out of sync
   cOptions.compression = static_cast<foxglove_mcap_compression>(options.compression);

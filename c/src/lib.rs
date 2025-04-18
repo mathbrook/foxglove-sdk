@@ -4,11 +4,31 @@
 
 use bitflags::bitflags;
 use mcap::{Compression, WriteOptions};
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{c_char, c_void, CString};
 use std::fs::File;
 use std::io::BufWriter;
 use std::mem::ManuallyDrop;
 use std::sync::Arc;
+
+/// A string with associated length.
+#[repr(C)]
+pub struct FoxgloveString {
+    /// Pointer to valid UTF-8 data
+    data: *const c_char,
+    /// Number of bytes in the string
+    len: usize,
+}
+
+impl FoxgloveString {
+    /// Wrapper around [`std::str::from_utf8`].
+    ///
+    /// # Safety
+    ///
+    /// The [`data`] field must be valid UTF-8, and have a length equal to [`FoxgloveString.len`].
+    unsafe fn as_utf8_str(&self) -> Result<&str, std::str::Utf8Error> {
+        std::str::from_utf8(unsafe { std::slice::from_raw_parts(self.data as *const u8, self.len) })
+    }
+}
 
 // Easier to get reasonable C output from cbindgen with constants rather than directly exporting the bitflags macro
 #[derive(Clone, Copy)]
@@ -71,12 +91,12 @@ impl From<FoxgloveServerCapability> for FoxgloveServerCapabilityBitFlags {
 
 #[repr(C)]
 pub struct FoxgloveServerOptions<'a> {
-    pub name: *const c_char,
-    pub host: *const c_char,
+    pub name: FoxgloveString,
+    pub host: FoxgloveString,
     pub port: u16,
     pub callbacks: Option<&'a FoxgloveServerCallbacks>,
     pub capabilities: FoxgloveServerCapability,
-    pub supported_encodings: *const *const c_char,
+    pub supported_encodings: *const FoxgloveString,
     pub supported_encodings_count: usize,
 }
 
@@ -137,8 +157,8 @@ unsafe impl Sync for FoxgloveServerCallbacks {}
 
 #[repr(C)]
 pub struct FoxgloveSchema {
-    pub name: *const c_char,
-    pub encoding: *const c_char,
+    pub name: FoxgloveString,
+    pub encoding: FoxgloveString,
     pub data: *const u8,
     pub data_len: usize,
 }
@@ -163,7 +183,10 @@ impl FoxgloveWebSocketServer {
 /// Returns 0 on success, or returns a FoxgloveError code on error.
 ///
 /// # Safety
-/// `name` and `host` must be null-terminated strings with valid UTF8.
+/// If `name` is supplied in options, it must contain valid UTF8.
+/// If `host` is supplied in options, it must contain valid UTF8.
+/// If `supported_encodings` is supplied in options, all `supported_encodings` must contain valid
+/// UTF8, and `supported_encodings` must have length equal to `supported_encodings_count`.
 #[unsafe(no_mangle)]
 #[must_use]
 pub unsafe extern "C" fn foxglove_server_start(
@@ -179,12 +202,11 @@ pub unsafe extern "C" fn foxglove_server_start(
 unsafe fn do_foxglove_server_start(
     options: &FoxgloveServerOptions,
 ) -> Result<*mut FoxgloveWebSocketServer, foxglove::FoxgloveError> {
-    let name = unsafe { CStr::from_ptr(options.name) }
-        .to_str()
+    let name = unsafe { options.name.as_utf8_str() }
         .map_err(|e| foxglove::FoxgloveError::Utf8Error(format!("name is invalid: {}", e)))?;
-    let host = unsafe { CStr::from_ptr(options.host) }
-        .to_str()
+    let host = unsafe { options.host.as_utf8_str() }
         .map_err(|e| foxglove::FoxgloveError::Utf8Error(format!("host is invalid: {}", e)))?;
+
     let mut server = foxglove::WebSocketServer::new()
         .name(name)
         .capabilities(
@@ -206,13 +228,13 @@ unsafe fn do_foxglove_server_start(
                 )
             }
             .iter()
-            .map(|&enc| {
-                if enc.is_null() {
+            .map(|enc| {
+                if enc.data.is_null() {
                     return Err(foxglove::FoxgloveError::ValueError(
                         "encoding in supported_encodings is null".to_string(),
                     ));
                 }
-                unsafe { CStr::from_ptr(enc) }.to_str().map_err(|e| {
+                unsafe { enc.as_utf8_str() }.map_err(|e| {
                     foxglove::FoxgloveError::Utf8Error(format!(
                         "encoding in supported_encodings is invalid: {}",
                         e
@@ -274,12 +296,11 @@ pub enum FoxgloveMcapCompression {
 
 #[repr(C)]
 pub struct FoxgloveMcapOptions {
-    pub path: *const c_char,
+    pub path: FoxgloveString,
     pub path_len: usize,
     pub truncate: bool,
     pub compression: FoxgloveMcapCompression,
-    pub profile: *const c_char,
-    pub profile_len: usize,
+    pub profile: FoxgloveString,
     // The library option is not provided here, because it is ignored by our Rust SDK
     /// chunk_size of 0 is treated as if it was omitted (None)
     pub chunk_size: u64,
@@ -297,10 +318,9 @@ pub struct FoxgloveMcapOptions {
 
 impl FoxgloveMcapOptions {
     unsafe fn to_write_options(&self) -> Result<WriteOptions, foxglove::FoxgloveError> {
-        let profile = std::str::from_utf8(unsafe {
-            std::slice::from_raw_parts(self.profile as *const u8, self.profile_len)
-        })
-        .map_err(|e| foxglove::FoxgloveError::ValueError(format!("profile is invalid: {}", e)))?;
+        let profile = unsafe { self.profile.as_utf8_str() }.map_err(|e| {
+            foxglove::FoxgloveError::ValueError(format!("profile is invalid: {}", e))
+        })?;
 
         let compression = match self.compression {
             FoxgloveMcapCompression::Zstd => Some(Compression::Zstd),
@@ -343,7 +363,7 @@ impl FoxgloveMcapWriter {
 /// Returns 0 on success, or returns a FoxgloveError code on error.
 ///
 /// # Safety
-/// `path` and `profile` must be valid UTF8.
+/// `path` and `profile` must contain valid UTF8.
 #[unsafe(no_mangle)]
 #[must_use]
 pub unsafe extern "C" fn foxglove_mcap_open(
@@ -359,10 +379,8 @@ pub unsafe extern "C" fn foxglove_mcap_open(
 unsafe fn do_foxglove_mcap_open(
     options: &FoxgloveMcapOptions,
 ) -> Result<*mut FoxgloveMcapWriter, foxglove::FoxgloveError> {
-    let path = std::str::from_utf8(unsafe {
-        std::slice::from_raw_parts(options.path as *const u8, options.path_len)
-    })
-    .map_err(|e| foxglove::FoxgloveError::Utf8Error(format!("path is invalid: {}", e)))?;
+    let path = unsafe { options.path.as_utf8_str() }
+        .map_err(|e| foxglove::FoxgloveError::Utf8Error(format!("path is invalid: {}", e)))?;
 
     // Safety: this is safe if the options struct contains valid strings
     let mcap_options = unsafe { options.to_write_options() }?;
@@ -417,13 +435,13 @@ pub struct FoxgloveChannel(foxglove::RawChannel);
 /// Returns 0 on success, or returns a FoxgloveError code on error.
 ///
 /// # Safety
-/// `topic` and `message_encoding` must be null-terminated strings with valid UTF8. `schema` is an
-/// optional pointer to a schema. The schema and the data it points to need only remain alive for
-/// the duration of this function call (they will be copied).
+/// `topic` and `message_encoding` must contain valid UTF8. `schema` is an optional pointer to a
+/// schema. The schema and the data it points to need only remain alive for the duration of this
+/// function call (they will be copied).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn foxglove_channel_create(
-    topic: *const c_char,
-    message_encoding: *const c_char,
+    topic: FoxgloveString,
+    message_encoding: FoxgloveString,
     schema: *const FoxgloveSchema,
     channel: *mut *const FoxgloveChannel,
 ) -> FoxgloveError {
@@ -438,31 +456,25 @@ pub unsafe extern "C" fn foxglove_channel_create(
 }
 
 unsafe fn do_foxglove_channel_create(
-    topic: *const c_char,
-    message_encoding: *const c_char,
+    topic: FoxgloveString,
+    message_encoding: FoxgloveString,
     schema: *const FoxgloveSchema,
 ) -> Result<*const FoxgloveChannel, foxglove::FoxgloveError> {
-    let topic = unsafe { CStr::from_ptr(topic) }
-        .to_str()
+    let topic = unsafe { topic.as_utf8_str() }
         .map_err(|e| foxglove::FoxgloveError::Utf8Error(format!("topic invalid: {}", e)))?;
-    let message_encoding = unsafe { CStr::from_ptr(message_encoding) }
-        .to_str()
-        .map_err(|e| {
-            foxglove::FoxgloveError::Utf8Error(format!("message_encoding invalid: {}", e))
-        })?;
+    let message_encoding = unsafe { message_encoding.as_utf8_str() }.map_err(|e| {
+        foxglove::FoxgloveError::Utf8Error(format!("message_encoding invalid: {}", e))
+    })?;
 
     let mut maybe_schema = None;
     if let Some(schema) = unsafe { schema.as_ref() } {
-        let name = unsafe { CStr::from_ptr(schema.name) }
-            .to_str()
-            .map_err(|e| {
-                foxglove::FoxgloveError::Utf8Error(format!("schema name invalid: {}", e))
-            })?;
-        let encoding = unsafe { CStr::from_ptr(schema.encoding) }
-            .to_str()
-            .map_err(|e| {
-                foxglove::FoxgloveError::Utf8Error(format!("schema encoding invalid: {}", e))
-            })?;
+        let name = unsafe { schema.name.as_utf8_str() }.map_err(|e| {
+            foxglove::FoxgloveError::Utf8Error(format!("schema name invalid: {}", e))
+        })?;
+        let encoding = unsafe { schema.encoding.as_utf8_str() }.map_err(|e| {
+            foxglove::FoxgloveError::Utf8Error(format!("schema encoding invalid: {}", e))
+        })?;
+
         let data = unsafe { std::slice::from_raw_parts(schema.data, schema.data_len) };
         maybe_schema = Some(foxglove::Schema::new(name, encoding, data.to_owned()));
     }
@@ -683,7 +695,7 @@ impl From<foxglove::FoxgloveError> for FoxgloveError {
 }
 
 impl FoxgloveError {
-    fn to_cstr(&self) -> &'static CStr {
+    fn to_cstr(&self) -> &'static std::ffi::CStr {
         match self {
             FoxgloveError::Ok => c"Ok",
             FoxgloveError::ValueError => c"Value Error",
@@ -729,4 +741,26 @@ unsafe fn result_to_c<T>(
 #[unsafe(no_mangle)]
 pub extern "C" fn foxglove_error_to_cstr(error: FoxgloveError) -> *const c_char {
     error.to_cstr().as_ptr() as *const _
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_foxglove_string_as_utf8_str() {
+        let string = FoxgloveString {
+            data: c"test".as_ptr(),
+            len: 4,
+        };
+        let utf8_str = unsafe { string.as_utf8_str() };
+        assert_eq!(utf8_str, Ok("test"));
+
+        let string = FoxgloveString {
+            data: c"💖".as_ptr(),
+            len: 4,
+        };
+        let utf8_str = unsafe { string.as_utf8_str() };
+        assert_eq!(utf8_str, Ok("💖"));
+    }
 }
