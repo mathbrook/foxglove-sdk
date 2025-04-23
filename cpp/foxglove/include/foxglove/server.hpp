@@ -1,6 +1,7 @@
 #pragma once
 
 #include <foxglove/error.hpp>
+#include <foxglove/server/connection_graph.hpp>
 
 #include <cstdint>
 #include <functional>
@@ -9,6 +10,7 @@
 
 enum foxglove_error : uint8_t;
 struct foxglove_websocket_server;
+struct foxglove_connection_graph;
 
 namespace foxglove {
 
@@ -59,6 +61,8 @@ struct WebSocketServerCallbacks {
     void(uint32_t clientId, uint32_t clientChannelId, const std::byte* data, size_t dataLen)>
     onMessageData;
   std::function<void(uint32_t clientId, uint32_t clientChannelId)> onClientUnadvertise;
+  std::function<void()> onConnectionGraphSubscribe;
+  std::function<void()> onConnectionGraphUnsubscribe;
 };
 
 struct WebSocketServerOptions {
@@ -78,6 +82,8 @@ public:
   uint16_t port() const;
 
   FoxgloveError stop();
+
+  void publishConnectionGraph(ConnectionGraph& graph);
 
 private:
   WebSocketServer(
