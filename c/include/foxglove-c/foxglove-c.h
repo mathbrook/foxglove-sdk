@@ -91,6 +91,8 @@ typedef struct foxglove_channel foxglove_channel;
 
 typedef struct foxglove_connection_graph foxglove_connection_graph;
 
+typedef struct foxglove_context foxglove_context;
+
 typedef struct foxglove_mcap_writer foxglove_mcap_writer;
 
 typedef struct foxglove_websocket_server foxglove_websocket_server;
@@ -142,6 +144,11 @@ typedef struct foxglove_server_callbacks {
 typedef uint8_t foxglove_server_capability;
 
 typedef struct foxglove_server_options {
+  /**
+   * `context` can be null, or a valid pointer to a context created via `foxglove_context_new`.
+   * If it's null, the server will be created with the default context.
+   */
+  const struct foxglove_context *context;
   struct foxglove_string name;
   struct foxglove_string host;
   uint16_t port;
@@ -152,8 +159,12 @@ typedef struct foxglove_server_options {
 } foxglove_server_options;
 
 typedef struct foxglove_mcap_options {
+  /**
+   * `context` can be null, or a valid pointer to a context created via `foxglove_context_new`.
+   * If it's null, the mcap file will be created with the default context.
+   */
+  const struct foxglove_context *context;
   struct foxglove_string path;
-  size_t path_len;
   bool truncate;
   foxglove_mcap_compression compression;
   struct foxglove_string profile;
@@ -225,7 +236,8 @@ foxglove_error foxglove_server_publish_connection_graph(struct foxglove_websocke
  * Returns 0 on success, or returns a FoxgloveError code on error.
  *
  * # Safety
- * `path` and `profile` must contain valid UTF8.
+ * `path` and `profile` must contain valid UTF8. If `context` is non-null,
+ * it must have been created by `foxglove_context_new`.
  */
 foxglove_error foxglove_mcap_open(const struct foxglove_mcap_options *FOXGLOVE_NONNULL options,
                                   struct foxglove_mcap_writer **writer);
@@ -246,13 +258,17 @@ foxglove_error foxglove_mcap_close(struct foxglove_mcap_writer *writer);
  * Returns 0 on success, or returns a FoxgloveError code on error.
  *
  * # Safety
- * `topic` and `message_encoding` must contain valid UTF8. `schema` is an optional pointer to a
- * schema. The schema and the data it points to need only remain alive for the duration of this
- * function call (they will be copied).
+ * `topic` and `message_encoding` must contain valid UTF8.
+ * `schema` is an optional pointer to a schema. The schema and the data it points to
+ * need only remain alive for the duration of this function call (they will be copied).
+ * `context` can be null, or a valid pointer to a context created via `foxglove_context_new`.
+ * `channel` is an out **FoxgloveChannel pointer, which will be set to the created channel
+ * if the function returns success.
  */
 foxglove_error foxglove_channel_create(struct foxglove_string topic,
                                        struct foxglove_string message_encoding,
                                        const struct foxglove_schema *schema,
+                                       const struct foxglove_context *context,
                                        const struct foxglove_channel **channel);
 
 /**
@@ -287,6 +303,20 @@ foxglove_error foxglove_channel_log(const struct foxglove_channel *channel,
                                     const uint8_t *data,
                                     size_t data_len,
                                     const uint64_t *log_time);
+
+/**
+ * Create a new context. This never fails.
+ * You must pass this to `foxglove_context_free` when done with it.
+ */
+const struct foxglove_context *foxglove_context_new(void);
+
+/**
+ * Free a context created via `foxglove_context_new` or `foxglove_context_free`.
+ *
+ * # Safety
+ * `context` must be a valid pointer to a context created via `foxglove_context_new`.
+ */
+void foxglove_context_free(const struct foxglove_context *context);
 
 /**
  * For use by the C++ SDK. Identifies that wrapper as the source of logs.
