@@ -3,6 +3,7 @@
 #include <foxglove/context.hpp>
 #include <foxglove/error.hpp>
 #include <foxglove/server/connection_graph.hpp>
+#include <foxglove/server/parameter.hpp>
 
 #include <cstdint>
 #include <functional>
@@ -78,30 +79,62 @@ struct WebSocketServerCallbacks {
   /// Only invoked if the channel is associated with the server and isn't already subscribed to by
   /// the client.
   std::function<void(uint64_t channel_id)> onSubscribe;
+
   /// @brief Callback invoked when a client unsubscribes from a channel.
   ///
   /// Only invoked for channels that had an active subscription from the client.
   std::function<void(uint64_t channel_id)> onUnsubscribe;
+
   /// @brief Callback invoked when a client advertises a client channel.
   ///
   /// Requires the capability WebSocketServerCapabilities::ClientPublish
   std::function<void(uint32_t client_id, const ClientChannel& channel)> onClientAdvertise;
+
   /// @brief Callback invoked when a client message is received
   std::function<
     void(uint32_t client_id, uint32_t client_channel_id, const std::byte* data, size_t data_len)>
     onMessageData;
+
   /// @brief Callback invoked when a client unadvertises a client channel.
   ///
   /// Requires the capability WebSocketServerCapabilities::ClientPublish
   std::function<void(uint32_t client_id, uint32_t client_channel_id)> onClientUnadvertise;
+
   /// @brief Callback invoked when a client requests parameters.
   ///
-  /// Requires the capability WebSocketServerCapabilities::Parameters
-  std::function<void()> onGetParameters;
+  /// Requires the capability WebSocketServerCapabilities::Parameters.
+  ///
+  /// @param client_id The client ID.
+  /// @param request_id A request ID unique to this client. May be NULL.
+  /// @param param_names A list of parameter names to fetch. If empty, this
+  /// method should return all parameters.
+  std::function<std::vector<Parameter>(
+    uint32_t client_id, std::optional<std::string_view> request_id,
+    const std::vector<std::string_view>& param_names
+  )>
+    onGetParameters;
+
+  /// @brief Callback invoked when a client sets parameters.
+  ///
+  /// Requires the capability WebSocketServerCapabilities::Parameters.
+  ///
+  /// This function should return the updated parameters. All clients subscribed
+  /// to updates for the returned parameters will be notified.
+  ///
+  /// @param client_id The client ID.
+  /// @param request_id A request ID unique to this client. May be NULL.
+  /// @param param_names A list of updated parameter values.
+  std::function<std::vector<Parameter>(
+    uint32_t client_id, std::optional<std::string_view> request_id,
+    const std::vector<ParameterView>& params
+  )>
+    onSetParameters;
+
   /// @brief Callback invoked when a client requests connection graph updates.
   ///
   /// Requires the capability WebSocketServerCapabilities::ConnectionGraph
   std::function<void()> onConnectionGraphSubscribe;
+
   /// @brief Callback invoked when a client unsubscribes from connection graph updates.
   ///
   /// Requires the capability WebSocketServerCapabilities::ConnectionGraph

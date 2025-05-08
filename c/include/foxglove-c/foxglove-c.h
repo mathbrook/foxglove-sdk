@@ -69,6 +69,8 @@ enum foxglove_error
   FOXGLOVE_ERROR_CONNECTION_GRAPH_NOT_SUPPORTED,
   FOXGLOVE_ERROR_IO_ERROR,
   FOXGLOVE_ERROR_MCAP_ERROR,
+  FOXGLOVE_ERROR_BUFFER_TOO_SHORT,
+  FOXGLOVE_ERROR_BASE64_DECODE_ERROR,
 };
 #ifndef __cplusplus
 typedef uint8_t foxglove_error;
@@ -100,6 +102,56 @@ enum foxglove_mcap_compression
 };
 #ifndef __cplusplus
 typedef uint8_t foxglove_mcap_compression;
+#endif // __cplusplus
+
+/**
+ * A parameter type.
+ *
+ * This enum is used to disambiguate `foxglove_parameter` values, in situations where the wire
+ * representation is ambiguous.
+ */
+enum foxglove_parameter_type
+#ifdef __cplusplus
+  : uint8_t
+#endif // __cplusplus
+ {
+  /**
+   * The parameter value can be inferred from the inner parameter value tag.
+   */
+  FOXGLOVE_PARAMETER_TYPE_NONE,
+  /**
+   * An array of bytes.
+   */
+  FOXGLOVE_PARAMETER_TYPE_BYTE_ARRAY,
+  /**
+   * A decimal or integer value that can be represented as a `float64`.
+   */
+  FOXGLOVE_PARAMETER_TYPE_FLOAT64,
+  /**
+   * An array of decimal or integer values that can be represented as `float64`s.
+   */
+  FOXGLOVE_PARAMETER_TYPE_FLOAT64_ARRAY,
+};
+#ifndef __cplusplus
+typedef uint8_t foxglove_parameter_type;
+#endif // __cplusplus
+
+/**
+ * A variant discriminator for `FoxgloveParameterValueData`.
+ */
+enum foxglove_parameter_value_tag
+#ifdef __cplusplus
+  : uint8_t
+#endif // __cplusplus
+ {
+  FOXGLOVE_PARAMETER_VALUE_TAG_NUMBER,
+  FOXGLOVE_PARAMETER_VALUE_TAG_BOOLEAN,
+  FOXGLOVE_PARAMETER_VALUE_TAG_STRING,
+  FOXGLOVE_PARAMETER_VALUE_TAG_ARRAY,
+  FOXGLOVE_PARAMETER_VALUE_TAG_DICT,
+};
+#ifndef __cplusplus
+typedef uint8_t foxglove_parameter_value_tag;
 #endif // __cplusplus
 
 typedef struct foxglove_channel foxglove_channel;
@@ -136,6 +188,129 @@ typedef struct foxglove_client_channel {
   size_t schema_len;
 } foxglove_client_channel;
 
+/**
+ * An array of parameter values.
+ *
+ * Constructed with `foxglove_parameter_value_array_create`.
+ */
+typedef struct foxglove_parameter_value_array {
+  /**
+   * A pointer to the array of parameter values.
+   */
+  const struct foxglove_parameter_value *values;
+  /**
+   * Number of elements in the array.
+   */
+  size_t len;
+  /**
+   * Capacity of the array.
+   */
+  size_t capacity;
+} foxglove_parameter_value_array;
+
+/**
+ * An dictionary entry for a parameter value.
+ *
+ * Constructed implicitly with `foxglove_parameter_value_dict_insert`.
+ */
+typedef struct foxglove_parameter_value_dict_entry {
+  /**
+   * The dictionary entry's key.
+   */
+  struct foxglove_string key;
+  /**
+   * The dictionary entry's value.
+   */
+  const struct foxglove_parameter_value *value;
+} foxglove_parameter_value_dict_entry;
+
+/**
+ * An dictionary of parameter values.
+ *
+ * Constructed with `foxglove_parameter_value_dict_create`.
+ */
+typedef struct foxglove_parameter_value_dict {
+  /**
+   * A pointer to the array of dictionary entries.
+   */
+  const struct foxglove_parameter_value_dict_entry *entries;
+  /**
+   * Number of elements in the dictionary.
+   */
+  size_t len;
+  /**
+   * Capacity of the dictionary.
+   */
+  size_t capacity;
+} foxglove_parameter_value_dict;
+
+/**
+ * Storage for `FoxgloveParameterValue`.
+ */
+typedef union foxglove_parameter_value_data {
+  double number;
+  bool boolean;
+  struct foxglove_string string;
+  struct foxglove_parameter_value_array array;
+  struct foxglove_parameter_value_dict dict;
+} foxglove_parameter_value_data;
+
+/**
+ * A websocket parameter value.
+ *
+ * Constructed with `foxglove_parameter_value_create_*`.
+ */
+typedef struct foxglove_parameter_value {
+  /**
+   * A variant discriminator for the `data` union.
+   */
+  foxglove_parameter_value_tag tag;
+  /**
+   * Storage for the value's data.
+   */
+  union foxglove_parameter_value_data data;
+} foxglove_parameter_value;
+
+/**
+ * A websocket parameter.
+ *
+ * Constructed with `foxglove_parameter_create`.
+ */
+typedef struct foxglove_parameter {
+  /**
+   * Parameter name.
+   */
+  struct foxglove_string name;
+  /**
+   * Parameter type.
+   */
+  foxglove_parameter_type type;
+  /**
+   * Parameter value.
+   */
+  const struct foxglove_parameter_value *value;
+} foxglove_parameter;
+
+/**
+ * An array of websocket parameters.
+ *
+ * Constructed with `foxglove_parameter_array_create`.
+ */
+typedef struct foxglove_parameter_array {
+  /**
+   * Pointer to array of parameters.
+   */
+  const struct foxglove_parameter *parameters;
+  /**
+   * Number of valid elements in the array.
+   */
+  size_t len;
+  /**
+   * Capacity of the array.
+   */
+  size_t capacity;
+} foxglove_parameter_array;
+
 typedef struct foxglove_server_callbacks {
   /**
    * A user-defined value that will be passed to callback functions
@@ -152,6 +327,48 @@ typedef struct foxglove_server_callbacks {
                           size_t payload_len,
                           const void *context);
   void (*on_client_unadvertise)(uint32_t client_id, uint32_t client_channel_id, const void *context);
+  /**
+   * Callback invoked when a client requests parameters.
+   *
+   * Requires `FOXGLOVE_CAPABILITY_PARAMETERS`.
+   *
+   * The `request_id` argument may be NULL.
+   *
+   * The `param_names` argument is guaranteed to be non-NULL. These arguments point to buffers
+   * that are valid and immutable for the duration of the call. If the callback wishes to store
+   * these values, they must be copied out.
+   *
+   * This function should return the named parameters, or all parameters if `param_names` is
+   * empty. The return value must be allocated with `foxglove_parameter_array_create`. Ownership
+   * of this value is transfered to the callee, who is responsible for freeing it. A NULL return
+   * value is treated as an empty array.
+   */
+  struct foxglove_parameter_array *(*on_get_parameters)(const void *context,
+                                                        uint32_t client_id,
+                                                        const struct foxglove_string *request_id,
+                                                        const struct foxglove_string *param_names,
+                                                        size_t param_names_len);
+  /**
+   * Callback invoked when a client sets parameters.
+   *
+   * Requires `FOXGLOVE_CAPABILITY_PARAMETERS`.
+   *
+   * The `request_id` argument may be NULL.
+   *
+   * The `params` argument is guaranteed to be non-NULL. These arguments point to buffers that
+   * are valid and immutable for the duration of the call. If the callback wishes to store these
+   * values, they must be copied out.
+   *
+   * This function should return the updated parameters. The return value must be allocated with
+   * `foxglove_parameter_array_create`. Ownership of this value is transfered to the callee, who
+   * is responsible for freeing it. A NULL return value is treated as an empty array.
+   *
+   * All clients subscribed to updates for the returned parameters will be notified.
+   */
+  struct foxglove_parameter_array *(*on_set_parameters)(const void *context,
+                                                        uint32_t client_id,
+                                                        const struct foxglove_string *request_id,
+                                                        const struct foxglove_parameter_array *params);
   void (*on_connection_graph_subscribe)(const void *context);
   void (*on_connection_graph_unsubscribe)(const void *context);
 } foxglove_server_callbacks;
@@ -205,6 +422,20 @@ typedef struct foxglove_schema {
   const uint8_t *data;
   size_t data_len;
 } foxglove_schema;
+
+/**
+ * A byte array with associated length.
+ */
+typedef struct foxglove_bytes {
+  /**
+   * Pointer to data
+   */
+  const uint8_t *data;
+  /**
+   * Number of bytes
+   */
+  size_t len;
+} foxglove_bytes;
 
 #ifdef __cplusplus
 extern "C" {
@@ -422,6 +653,336 @@ foxglove_error foxglove_connection_graph_set_advertised_service(struct foxglove_
  * "always", or "auto" (default).
  */
 void foxglove_set_log_level(foxglove_log_level level);
+
+/**
+ * Creates a new parameter array with the specified capacity.
+ *
+ * The array must be freed with `foxglove_parameter_array_free`.
+ */
+struct foxglove_parameter_array *foxglove_parameter_array_create(size_t capacity);
+
+/**
+ * Pushes a parameter into the array.
+ *
+ * # Safety
+ * - `array` must be a valid pointer to an array allocated by `foxglove_parameter_array_create`.
+ * - `param` must be a valid parameter to a value allocated by `foxglove_parameter_create` or
+ *   `foxglove_parameter_clone`. This value is moved into this function, and must not be accessed
+ *   afterwards.
+ */
+foxglove_error foxglove_parameter_array_push(struct foxglove_parameter_array *array,
+                                             struct foxglove_parameter *param);
+
+/**
+ * Frees the parameter array and its contained parameters.
+ *
+ * # Safety
+ * - `array` must be a valid pointer to a value allocated by `foxglove_parameter_array_create`.
+ */
+void foxglove_parameter_array_free(struct foxglove_parameter_array *array);
+
+/**
+ * Creates a new parameter.
+ *
+ * The parameter must be freed with `foxglove_parameter_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_array_push`.
+ *
+ * # Safety
+ * - `param` must be a valid pointer.
+ * - `name` must be a valid `foxglove_string`. This value is copied by this function.
+ * - `value` must either be a valid pointer to a value allocated by
+ *   `foxglove_parameter_value_create`, or NULL. This value is moved into this function, and must
+ *   not be accessed afterwards.
+ */
+foxglove_error foxglove_parameter_create(struct foxglove_parameter **param,
+                                         struct foxglove_string name,
+                                         foxglove_parameter_type type,
+                                         struct foxglove_parameter_value *value);
+
+/**
+ * Creates a new empty parameter.
+ *
+ * The value must be freed with `foxglove_parameter_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_array_push`.
+ *
+ * # Safety
+ * - `param` must be a valid pointer.
+ * - `name` must be a valid `foxglove_string`. This value is copied by this function.
+ */
+foxglove_error foxglove_parameter_create_empty(struct foxglove_parameter **param,
+                                               struct foxglove_string name);
+
+/**
+ * Creates a new number parameter.
+ *
+ * The value must be freed with `foxglove_parameter_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_array_push`.
+ *
+ * # Safety
+ * - `param` must be a valid pointer.
+ * - `name` must be a valid `foxglove_string`. This value is copied by this function.
+ */
+foxglove_error foxglove_parameter_create_float64(struct foxglove_parameter **param,
+                                                 struct foxglove_string name,
+                                                 double value);
+
+/**
+ * Creates a new boolean parameter.
+ *
+ * The value must be freed with `foxglove_parameter_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_array_push`.
+ *
+ * # Safety
+ * - `param` must be a valid pointer.
+ * - `name` must be a valid `foxglove_string`. This value is copied by this function.
+ */
+foxglove_error foxglove_parameter_create_boolean(struct foxglove_parameter **param,
+                                                 struct foxglove_string name,
+                                                 bool value);
+
+/**
+ * Creates a new string parameter.
+ *
+ * The value must be freed with `foxglove_parameter_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_array_push`.
+ *
+ * # Safety
+ * - `param` must be a valid pointer.
+ * - `name` must be a valid `foxglove_string`. This value is copied by this function.
+ * - `value` must be a valid `foxglove_string`. This value is copied by this function.
+ */
+foxglove_error foxglove_parameter_create_string(struct foxglove_parameter **param,
+                                                struct foxglove_string name,
+                                                struct foxglove_string value);
+
+/**
+ * Creates a new byte array parameter.
+ *
+ * The value must be freed with `foxglove_parameter_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_array_push`.
+ *
+ * # Safety
+ * - `param` must be a valid pointer.
+ * - `name` must be a valid `foxglove_string`. This value is copied by this function.
+ * - `value` must be a valid `foxglove_bytes`. This value is copied by this function.
+ */
+foxglove_error foxglove_parameter_create_byte_array(struct foxglove_parameter **param,
+                                                    struct foxglove_string name,
+                                                    struct foxglove_bytes value);
+
+/**
+ * Creates a new parameter which is an array of float64 values.
+ *
+ * The value must be freed with `foxglove_parameter_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_array_push`.
+ *
+ * # Safety
+ * - `param` must be a valid pointer.
+ * - `name` must be a valid `foxglove_string`. This value is copied by this function.
+ * - `values` must be a valid pointer to an array of float64 values of `values_len` elements. This
+ *   value is copied by this function.
+ */
+foxglove_error foxglove_parameter_create_float64_array(struct foxglove_parameter **param,
+                                                       struct foxglove_string name,
+                                                       const double *values,
+                                                       size_t values_len);
+
+/**
+ * Creates a new parameter which is a dictionary of parameter values.
+ *
+ * The value must be freed with `foxglove_parameter_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_array_push`.
+ *
+ * # Safety
+ * - `param` must be a valid pointer.
+ * - `name` must be a valid `foxglove_string`. This value is copied by this function.
+ * - `dict` must be a valid pointer to a value allocated by
+ *   `foxglove_parameter_value_dict_create`. This value is moved into this function, and must not
+ *   be accessed afterwards.
+ */
+foxglove_error foxglove_parameter_create_dict(struct foxglove_parameter **param,
+                                              struct foxglove_string name,
+                                              struct foxglove_parameter_value_dict *dict);
+
+/**
+ * Returns an estimate of the decoded length for the byte array in bytes.
+ *
+ * # Safety
+ * - `param` must be a valid pointer to a value allocated by `foxglove_parameter_create` or
+ *   `foxglove_parameter_clone`.
+ * - `size` must be a valid pointer.
+ */
+foxglove_error foxglove_parameter_get_byte_array_decoded_size(const struct foxglove_parameter *param,
+                                                              size_t *len);
+
+/**
+ * Decodes a byte array into the provided buffer.
+ *
+ * The buffer should be at least the size returned by
+ * `foxglove_parameter_get_byte_array_decoded_size`.
+ *
+ * On success, updates `len` with the number of bytes written to the provided buffer.
+ *
+ * # Safety
+ * - `param` must be a valid pointer to a value allocated by `foxglove_parameter_create` or
+ *   `foxglove_parameter_clone`.
+ * - `data` must be a valid pointer to a writable buffer of size `len`.
+ * - `len` must be a valid pointer.
+ */
+foxglove_error foxglove_parameter_decode_byte_array(const struct foxglove_parameter *param,
+                                                    uint8_t *data,
+                                                    size_t *len);
+
+/**
+ * Clones a parameter.
+ *
+ * The value must be freed with `foxglove_parameter_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_array_push`.
+ *
+ * # Safety
+ * - `param` must be a valid pointer to a value allocated by `foxglove_parameter_create` or
+ *   `foxglove_parameter_clone`.
+ */
+struct foxglove_parameter *foxglove_parameter_clone(const struct foxglove_parameter *param);
+
+/**
+ * Frees a parameter.
+ *
+ * # Safety
+ * - `param` must be a valid pointer to a value allocated by `foxglove_parameter_create` or
+ *   `foxglove_parameter_clone`.
+ */
+void foxglove_parameter_free(struct foxglove_parameter *param);
+
+/**
+ * Creates a new number parameter value.
+ *
+ * The value must be freed with `foxglove_parameter_value_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_create`.
+ */
+struct foxglove_parameter_value *foxglove_parameter_value_create_number(double number);
+
+/**
+ * Creates a new boolean parameter value.
+ *
+ * The value must be freed with `foxglove_parameter_value_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_create`.
+ */
+struct foxglove_parameter_value *foxglove_parameter_value_create_boolean(bool boolean);
+
+/**
+ * Creates a new string parameter value.
+ *
+ * The value must be freed with `foxglove_parameter_value_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_create`.
+ *
+ * # Safety
+ * - `string` must be a valid `foxglove_string`. This value is copied by this function.
+ */
+foxglove_error foxglove_parameter_value_create_string(struct foxglove_parameter_value **value,
+                                                      struct foxglove_string string);
+
+/**
+ * Creates a new array parameter value.
+ *
+ * The value must be freed with `foxglove_parameter_value_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_create`.
+ *
+ * # Safety
+ * - `array` must be a valid pointer to a value allocated by
+ *   `foxglove_parameter_value_array_create`. This value is moved into this function, and must not
+ *   be accessed afterwards.
+ */
+struct foxglove_parameter_value *foxglove_parameter_value_create_array(struct foxglove_parameter_value_array *array);
+
+/**
+ * Creates a new dict parameter value.
+ *
+ * The value must be freed with `foxglove_parameter_value_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_create`.
+ *
+ * # Safety
+ * - `dict` must be a valid pointer to a value allocated by
+ *   `foxglove_parameter_value_dict_create`. This value is moved into this function, and must not be
+ *   accessed afterwards.
+ */
+struct foxglove_parameter_value *foxglove_parameter_value_create_dict(struct foxglove_parameter_value_dict *dict);
+
+/**
+ * Clones a parameter value.
+ *
+ * The value must be freed with `foxglove_parameter_value_free`, or by passing it to a consuming
+ * function such as `foxglove_parameter_create`.
+ *
+ * # Safety
+ * - `value` must be a valid pointer to a value allocated by `foxglove_parameter_value_create` or
+ *   `foxglove_parameter_value_clone`.
+ */
+struct foxglove_parameter_value *foxglove_parameter_value_clone(const struct foxglove_parameter_value *value);
+
+/**
+ * Frees a parameter value.
+ *
+ * # Safety
+ * - `value` must be a valid pointer to a value allocated by `foxglove_parameter_value_create_*`.
+ */
+void foxglove_parameter_value_free(struct foxglove_parameter_value *value);
+
+/**
+ * Creates a new value array with the specified capacity.
+ *
+ * The parameter must be freed with `foxglove_parameter_value_array_free`, or by passing it to a
+ * consuming function such as `foxglove_parameter_value_create_array`.
+ */
+struct foxglove_parameter_value_array *foxglove_parameter_value_array_create(size_t capacity);
+
+/**
+ * Pushes a parameter value into the array.
+ *
+ * # Safety
+ * - `array` must be a valid pointer to an array allocated by
+ *   `foxglove_parameter_value_array_create`.
+ * - `value` must be a valid pointer to a value allocated by `foxglove_parameter_value_create_*`.
+ *   This value is moved into this function, and must not be accessed afterwards.
+ */
+foxglove_error foxglove_parameter_value_array_push(struct foxglove_parameter_value_array *array,
+                                                   struct foxglove_parameter_value *value);
+
+/**
+ * Frees a parameter value array.
+ *
+ * # Safety
+ * - `array` is a valid pointer to a value allocated by `foxglove_parameter_value_array_create`.
+ */
+void foxglove_parameter_value_array_free(struct foxglove_parameter_value_array *array);
+
+/**
+ * Creates a new value dict with the specified capacity.
+ *
+ * The parameter must be freed with `foxglove_parameter_value_dict_free`, or by passing it to a
+ * consuming function such as `foxglove_parameter_value_create_dict`.
+ */
+struct foxglove_parameter_value_dict *foxglove_parameter_value_dict_create(size_t capacity);
+
+/**
+ * Inserts an entry into the parameter value dict.
+ *
+ * # Safety
+ * - `key` must be a valid `foxglove_string`. This value is copied by this function.
+ * - `value` must be a valid pointer to a value allocated by `foxglove_parameter_value_create_*`.
+ *   This value is moved into this function, and must not be accessed afterwards.
+ */
+foxglove_error foxglove_parameter_value_dict_insert(struct foxglove_parameter_value_dict *dict,
+                                                    struct foxglove_string key,
+                                                    struct foxglove_parameter_value *value);
+
+/**
+ * Frees a parameter value dict.
+ *
+ * # Safety
+ * - `dict` is a valid pointer to a value allocated by `foxglove_parameter_value_dict_create`.
+ */
+void foxglove_parameter_value_dict_free(struct foxglove_parameter_value_dict *dict);
 
 #ifdef __cplusplus
 }  // extern "C"

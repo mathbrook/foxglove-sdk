@@ -12,6 +12,7 @@ crate-type = ["staticlib", "cdylib"]
 workspace = true
 
 [dependencies]
+base64 = "0.22.1"
 bitflags = "2.9.0"
 env_logger = "0.11.5"
 foxglove = { path = "../rust/foxglove", features = ["unstable"] }
@@ -21,3 +22,6 @@ tracing.workspace = true
 
 [build-dependencies]
 cbindgen = "0.28.0"
+
+[dev-dependencies]
+maplit = "1.0.2"

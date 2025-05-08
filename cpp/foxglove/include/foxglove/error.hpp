@@ -42,7 +42,11 @@ enum class FoxgloveError : uint8_t {
   /// An I/O error.
   IoError,
   /// An error related to MCAP encoding.
-  McapError
+  McapError,
+  /// The provided bufffer is too short.
+  BufferTooShort,
+  /// Failed to decode base64 data.
+  Base64DecodeError
 };
 
 /// @brief A result type for Foxglove operations.
