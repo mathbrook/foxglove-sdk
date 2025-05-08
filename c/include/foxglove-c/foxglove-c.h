@@ -369,6 +369,30 @@ typedef struct foxglove_server_callbacks {
                                                         uint32_t client_id,
                                                         const struct foxglove_string *request_id,
                                                         const struct foxglove_parameter_array *params);
+  /**
+   * Callback invoked when a client subscribes to the named parameters for the first time.
+   *
+   * Requires `FOXGLOVE_CAPABILITY_PARAMETERS`.
+   *
+   * The `param_names` argument is guaranteed to be non-NULL. This argument points to buffers
+   * that are valid and immutable for the duration of the call. If the callback wishes to store
+   * these values, they must be copied out.
+   */
+  void (*on_parameters_subscribe)(const void *context,
+                                  const struct foxglove_string *param_names,
+                                  size_t param_names_len);
+  /**
+   * Callback invoked when the last client unsubscribes from the named parameters.
+   *
+   * Requires `FOXGLOVE_CAPABILITY_PARAMETERS`.
+   *
+   * The `param_names` argument is guaranteed to be non-NULL. This argument points to buffers
+   * that are valid and immutable for the duration of the call. If the callback wishes to store
+   * these values, they must be copied out.
+   */
+  void (*on_parameters_unsubscribe)(const void *context,
+                                    const struct foxglove_string *param_names,
+                                    size_t param_names_len);
   void (*on_connection_graph_subscribe)(const void *context);
   void (*on_connection_graph_unsubscribe)(const void *context);
 } foxglove_server_callbacks;
@@ -468,6 +492,16 @@ uint16_t foxglove_server_get_port(struct foxglove_websocket_server *server);
  * Stop and shut down `server` and free the resources associated with it.
  */
 foxglove_error foxglove_server_stop(struct foxglove_websocket_server *server);
+
+/**
+ * Publish parameter values to all subscribed clients.
+ *
+ * # Safety
+ * - `params` must be a valid parameter to a value allocated by `foxglove_parameter_array_create`.
+ *   This value is moved into this function, and must not be accessed afterwards.
+ */
+foxglove_error foxglove_server_publish_parameter_values(struct foxglove_websocket_server *server,
+                                                        struct foxglove_parameter_array *params);
 
 /**
  * Publish a connection graph to the server.
