@@ -111,6 +111,7 @@ private:
   std::ostringstream buffer_;
 };
 
+/// @private
 inline WarnStream warn() {
   return WarnStream{};
 }
