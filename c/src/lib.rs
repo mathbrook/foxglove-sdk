@@ -38,6 +38,15 @@ pub struct FoxgloveString {
     len: usize,
 }
 
+impl Default for FoxgloveString {
+    fn default() -> Self {
+        Self {
+            data: "".as_ptr().cast(),
+            len: 0,
+        }
+    }
+}
+
 impl FoxgloveString {
     /// Wrapper around [`std::str::from_utf8`].
     ///
@@ -1030,6 +1039,100 @@ pub extern "C" fn foxglove_channel_get_id(channel: Option<&FoxgloveChannel>) -> 
         return 0;
     };
     u64::from(channel.0.id())
+}
+
+/// Get the topic of a channel.
+///
+/// # Safety
+/// `channel` must be a valid pointer to a `foxglove_channel` created via `foxglove_channel_create`.
+///
+/// If the passed channel is null, an empty value is returned.
+///
+/// The returned value is valid only for the lifetime of the channel.
+#[unsafe(no_mangle)]
+pub extern "C" fn foxglove_channel_get_topic(channel: Option<&FoxgloveChannel>) -> FoxgloveString {
+    let Some(channel) = channel else {
+        return FoxgloveString::default();
+    };
+    FoxgloveString {
+        data: channel.0.topic().as_ptr().cast(),
+        len: channel.0.topic().len(),
+    }
+}
+
+/// Get the message_encoding of a channel.
+///
+/// # Safety
+/// `channel` must be a valid pointer to a `foxglove_channel` created via `foxglove_channel_create`.
+///
+/// If the passed channel is null, an empty value is returned.
+///
+/// The returned value is valid only for the lifetime of the channel.
+#[unsafe(no_mangle)]
+pub extern "C" fn foxglove_channel_get_message_encoding(
+    channel: Option<&FoxgloveChannel>,
+) -> FoxgloveString {
+    let Some(channel) = channel else {
+        return FoxgloveString::default();
+    };
+    FoxgloveString {
+        data: channel.0.message_encoding().as_ptr().cast(),
+        len: channel.0.message_encoding().len(),
+    }
+}
+
+/// Get the schema of a channel.
+///
+/// If the passed channel is null or has no schema, returns `FoxgloveError::ValueError`.
+///
+/// # Safety
+/// `channel` must be a valid pointer to a `foxglove_channel` created via `foxglove_channel_create`.
+/// `schema` must be a valid pointer to a `FoxgloveSchema` struct that will be filled in.
+///
+/// The returned value is valid only for the lifetime of the channel.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn foxglove_channel_get_schema(
+    channel: Option<&FoxgloveChannel>,
+    schema: *mut FoxgloveSchema,
+) -> FoxgloveError {
+    let Some(channel) = channel else {
+        return FoxgloveError::ValueError;
+    };
+    if schema.is_null() {
+        return FoxgloveError::ValueError;
+    }
+    let Some(schema_data) = channel.0.schema() else {
+        return FoxgloveError::ValueError;
+    };
+
+    unsafe {
+        (*schema).name = FoxgloveString {
+            data: schema_data.name.as_ptr().cast(),
+            len: schema_data.name.len(),
+        };
+        (*schema).encoding = FoxgloveString {
+            data: schema_data.encoding.as_ptr().cast(),
+            len: schema_data.encoding.len(),
+        };
+        (*schema).data = schema_data.data.as_ptr().cast();
+        (*schema).data_len = schema_data.data.len();
+    }
+
+    FoxgloveError::Ok
+}
+
+/// Find out if any sinks have been added to a channel.
+///
+/// # Safety
+/// `channel` must be a valid pointer to a `foxglove_channel` created via `foxglove_channel_create`.
+///
+/// If the passed channel is null, false is returned.
+#[unsafe(no_mangle)]
+pub extern "C" fn foxglove_channel_has_sinks(channel: Option<&FoxgloveChannel>) -> bool {
+    let Some(channel) = channel else {
+        return false;
+    };
+    channel.0.has_sinks()
 }
 
 /// Log a message on a channel.

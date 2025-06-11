@@ -71,6 +71,27 @@ public:
   /// @return The ID of the channel.
   [[nodiscard]] uint64_t id() const noexcept;
 
+  /// @brief Get the topic of the channel.
+  ///
+  /// @return The topic of the channel. The value is valid only for the lifetime of the channel.
+  [[nodiscard]] std::string_view topic() const noexcept;
+
+  /// @brief Get the message encoding of the channel.
+  ///
+  /// @return The message encoding of the channel. The value is valid only for the lifetime of the
+  /// channel.
+  [[nodiscard]] std::string_view message_encoding() const noexcept;
+
+  /// @brief Find out if any sinks have been added to the channel.
+  ///
+  /// @return True if sinks have been added to the channel, false otherwise.
+  [[nodiscard]] bool has_sinks() const noexcept;
+
+  /// @brief Get the schema of the channel.
+  ///
+  /// @return The schema of the channel. The value is valid only for the lifetime of the channel.
+  [[nodiscard]] std::optional<Schema> schema() const noexcept;
+
   RawChannel(const RawChannel&) = delete;
   RawChannel& operator=(const RawChannel&) = delete;
   /// @brief Default move constructor.

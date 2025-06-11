@@ -1976,6 +1976,54 @@ void foxglove_channel_free(const struct foxglove_channel *channel);
 uint64_t foxglove_channel_get_id(const struct foxglove_channel *channel);
 
 /**
+ * Get the topic of a channel.
+ *
+ * # Safety
+ * `channel` must be a valid pointer to a `foxglove_channel` created via `foxglove_channel_create`.
+ *
+ * If the passed channel is null, an empty value is returned.
+ *
+ * The returned value is valid only for the lifetime of the channel.
+ */
+struct foxglove_string foxglove_channel_get_topic(const struct foxglove_channel *channel);
+
+/**
+ * Get the message_encoding of a channel.
+ *
+ * # Safety
+ * `channel` must be a valid pointer to a `foxglove_channel` created via `foxglove_channel_create`.
+ *
+ * If the passed channel is null, an empty value is returned.
+ *
+ * The returned value is valid only for the lifetime of the channel.
+ */
+struct foxglove_string foxglove_channel_get_message_encoding(const struct foxglove_channel *channel);
+
+/**
+ * Get the schema of a channel.
+ *
+ * If the passed channel is null or has no schema, returns `FoxgloveError::ValueError`.
+ *
+ * # Safety
+ * `channel` must be a valid pointer to a `foxglove_channel` created via `foxglove_channel_create`.
+ * `schema` must be a valid pointer to a `FoxgloveSchema` struct that will be filled in.
+ *
+ * The returned value is valid only for the lifetime of the channel.
+ */
+foxglove_error foxglove_channel_get_schema(const struct foxglove_channel *channel,
+                                           struct foxglove_schema *schema);
+
+/**
+ * Find out if any sinks have been added to a channel.
+ *
+ * # Safety
+ * `channel` must be a valid pointer to a `foxglove_channel` created via `foxglove_channel_create`.
+ *
+ * If the passed channel is null, false is returned.
+ */
+bool foxglove_channel_has_sinks(const struct foxglove_channel *channel);
+
+/**
  * Log a message on a channel.
  *
  * # Safety
