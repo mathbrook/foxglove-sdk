@@ -100,7 +100,7 @@ target_compile_options(tests PUBLIC ${SANITIZER_COMPILE_OPTIONS})
 target_link_options(tests PUBLIC ${SANITIZER_LINK_OPTIONS})
 target_include_directories(tests SYSTEM PRIVATE $<TARGET_PROPERTY:nlohmann_json::nlohmann_json,INTERFACE_INCLUDE_DIRECTORIES>)
 target_include_directories(tests SYSTEM PRIVATE $<TARGET_PROPERTY:websocketpp::websocketpp,INTERFACE_INCLUDE_DIRECTORIES>)
-target_link_libraries(tests PRIVATE foxglove_cpp_static Catch2::Catch2WithMain)
+target_link_libraries(tests PRIVATE foxglove_cpp_static)
 # catch_discover_tests(tests)
 if(MSVC)
   # Auto-detection of C++11 support is not working on the windows-2025 runner with default settings
