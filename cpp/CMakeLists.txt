@@ -25,7 +25,7 @@ include(FetchContent)
 find_package(Catch2 REQUIRED)
 find_package(Corrosion REQUIRED)
 find_package(websocketpp REQUIRED)
-find_package(asio REQUIRED)
+# find_package(asio REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
 if(DEFINED SANITIZE)
